@@ -1,6 +1,6 @@
 import streamlit as st
 from core import config
-# from core import signal_processing, scoring, plotting_utils   # TO BE IMPLEMENTED
+from core import signal_processing, scoring, plotting_utils
 
 st.set_page_config(page_title="Results", page_icon="📈", layout="wide")
 
@@ -11,55 +11,57 @@ if not st.session_state.get("test_complete"):
     st.stop()
 
 raw_data = st.session_state.get("raw_time_series", {})
+baseline = st.session_state.get("baseline_positions", {})
 
-# TODO (AI / TEAM):
-# - Implement the following in signal_processing.py:
-#   * compute_displacement_time_series(raw_data, baseline_positions)
-#   * compute_tremor_metrics(...)
-#   * compute_drift_metrics(...)
-#   * compute_fatigue_metrics(...)
-#
-# Example pseudocode for what we want:
-# displacement = signal_processing.compute_displacement_time_series(
-#     raw_data, st.session_state["baseline_positions"]
-# )
-# tremor = signal_processing.compute_tremor_metrics(displacement)
-# drift = signal_processing.compute_drift_metrics(displacement)
-# fatigue = signal_processing.compute_fatigue_metrics(displacement)
-#
-# stability_score = scoring.compute_stability_score(tremor, drift, fatigue)
+if not raw_data:
+    st.error("No raw time series data found. Please rerun the Live Test.")
+    st.stop()
+
+displacement = signal_processing.compute_displacement_time_series(raw_data, baseline)
+tremor = signal_processing.compute_tremor_metrics(displacement)
+drift = signal_processing.compute_drift_metrics(displacement)
+fatigue = signal_processing.compute_fatigue_metrics(displacement)
+
+score_info = scoring.compute_stability_score(tremor, drift, fatigue)
 
 st.subheader("Summary Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric("Mean Tremor (all fingers)", "TODO", "units")
+    st.metric(
+        "Mean Tremor (all fingers)",
+        f"{score_info['tremor_mean']:.4f}",
+        "normalized units",
+    )
 with col2:
-    st.metric("Mean Drift", "TODO", "units")
+    st.metric(
+        "Mean Drift",
+        f"{score_info['drift_mean']:.4f}",
+        "normalized units",
+    )
 with col3:
-    st.metric("Mean Fatigue Index", "TODO")
+    st.metric("Mean Fatigue Index", f"{score_info['fatigue_mean']:.2f}")
 with col4:
-    st.metric("Stability Score", "TODO", "0–100")
+    st.metric("Stability Score", f"{score_info['score']:.1f}", "0–100")
 
 st.divider()
 
 st.subheader("Displacement Over Time")
 st.markdown("Plots of fingertip displacement relative to baseline for each finger.")
 
-# TODO (AI / TEAM):
-# - Use plotting_utils to generate matplotlib or Streamlit-native line plots.
-# - One plot per finger, or overlay with different colors.
-
-st.info("Line plots of displacement will appear here.")
+fig_disp = plotting_utils.plot_displacement_time_series(displacement)
+st.pyplot(fig_disp, use_container_width=True)
 
 st.subheader("Fatigue & Coordination")
 
-# TODO (AI / TEAM):
-# - Plot fatigue indices by finger as a bar chart.
-# - Optionally, compute Pearson correlation between finger signals and plot as heatmap.
+st.markdown("Fatigue index by finger (values > 1 suggest increasing tremor).")
 
-st.info("Bar chart for fatigue and optional correlation heatmap will appear here.")
+fat_cols = st.columns(len(config.FINGERS_TO_TRACK))
+for i, finger in enumerate(config.FINGERS_TO_TRACK):
+    val = fatigue.get(finger, 1.0)
+    with fat_cols[i]:
+        st.metric(finger.title(), f"{val:.2f}")
 
 st.divider()
 

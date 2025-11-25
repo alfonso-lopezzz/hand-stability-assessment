@@ -22,29 +22,42 @@ from core import config
 
 
 def plot_displacement_time_series(displacement_ts: Dict[str, List[Tuple[float, float]]]):
-    """
-    Create a line plot of displacement vs. time for each finger.
+    """Create a line plot of displacement vs. time for each finger.
 
     Parameters
     ----------
     displacement_ts : dict
         Dictionary mapping finger name -> list of (t, displacement) samples.
 
-        Example:
+        Example
+        -------
         {
             "THUMB": [(t0, d0), (t1, d1), ...],
             "INDEX": [(t0, d0), (t1, d1), ...],
             "MIDDLE": [(t0, d0), (t1, d1), ...]
         }
 
-    TODO (AI / TEAM):
-    - Use matplotlib to create a figure.
-    - For each finger in displacement_ts:
-        * Extract time (t) and displacement (d) values.
-        * Plot t vs. d as a line.
-        * Use config.FINGER_COLORS[finger] for the line color.
-    - Label axes appropriately.
-    - Add a legend and title.
-    - Return the matplotlib Figure object.
+    Returns
+    -------
+    matplotlib.figure.Figure
+        A simple matplotlib Figure that can be shown with st.pyplot(fig).
     """
-    raise NotImplementedError
+
+    fig, ax = plt.subplots(figsize=(6, 3))
+
+    for finger, series in displacement_ts.items():
+        if not series:
+            continue
+        ts = [t for t, _ in series]
+        ds = [d for _, d in series]
+        color = config.FINGER_COLORS.get(finger, "C0")
+        ax.plot(ts, ds, label=finger.title(), color=color)
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Displacement (normalized units)")
+    ax.set_title("Fingertip Displacement vs. Time")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    return fig
