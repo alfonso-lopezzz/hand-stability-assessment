@@ -31,6 +31,9 @@ st.divider()
 if "raw_time_series" not in st.session_state:
     st.session_state["raw_time_series"] = {f: [] for f in config.FINGERS_TO_TRACK}
 
+if "detection_stats" not in st.session_state:
+    st.session_state["detection_stats"] = {"frames": 0, "detected": 0}
+
 col1, col2 = st.columns([2, 1])
 
 with col1:
@@ -46,11 +49,17 @@ with col1:
         def __init__(self):
             self.mp, self.hands = mediapipe_utils.init_mediapipe_hands()
             self.start_time = None
+            self.last_detected = False
+            self.idx_map = {"THUMB": 4, "INDEX": 8, "MIDDLE": 12}
 
         def recv(self, frame):
             import av
 
             img = frame.to_ndarray(format="bgr24")
+            stats = st.session_state.get("detection_stats")
+            if stats is None:
+                stats = {"frames": 0, "detected": 0}
+                st.session_state["detection_stats"] = stats
 
             if st.session_state.get("webrtc_capturing"):
                 if self.start_time is None:
@@ -59,11 +68,29 @@ with col1:
 
                 rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 results = self.hands.process(rgb)
+                stats["frames"] += 1
                 if results.multi_hand_landmarks:
+                    stats["detected"] += 1
+                    self.last_detected = True
                     lms = results.multi_hand_landmarks[0]
-                    for name, idx in {"THUMB": 4, "INDEX": 8, "MIDDLE": 12}.items():
+                    for name, idx in self.idx_map.items():
                         lm = lms.landmark[idx]
                         st.session_state["raw_time_series"][name].append((t, lm.x, lm.y))
+                else:
+                    self.last_detected = False
+
+            status_text = "HAND DETECTED" if self.last_detected else "No hand detected"
+            color = (0, 200, 0) if self.last_detected else (0, 0, 200)
+            cv2.putText(
+                img,
+                status_text,
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
 
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
@@ -71,11 +98,28 @@ with col1:
         key="hand-tracking",
         mode=WebRtcMode.SENDRECV,
         video_transformer_factory=HandTrackingTransformer,
-        media_stream_constraints={"video": True, "audio": False},
+        media_stream_constraints={
+            "video": {
+                "width": {"ideal": 1280},
+                "height": {"ideal": 720},
+                "frameRate": {"ideal": 30},
+                "facingMode": "user",
+            },
+            "audio": False,
+        },
     )
 
 with col2:
     st.subheader("Test Control & Status")
+
+    stats = st.session_state.get("detection_stats", {"frames": 0, "detected": 0})
+    detected_ratio = (
+        stats["detected"] / stats["frames"] * 100 if stats["frames"] > 0 else 0.0
+    )
+    st.caption(
+        f"Detection confidence: {stats['detected']} / {stats['frames']} frames "
+        f"({detected_ratio:.1f}% with landmarks)"
+    )
 
     if st.button("▶ Start 30s Test"):
         duration = config.TEST_DURATION_SECONDS
@@ -86,6 +130,7 @@ with col2:
 
         # reset previous data
         st.session_state["raw_time_series"] = {f: [] for f in config.FINGERS_TO_TRACK}
+        st.session_state["detection_stats"] = {"frames": 0, "detected": 0}
         st.session_state["webrtc_capturing"] = True
 
         with st.spinner(f"Recording via browser webcam for {duration} seconds..."):
